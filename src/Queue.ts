@@ -42,7 +42,7 @@ export class Queue {
     }, 0)
   }
 
-  private clear () {
+  clear () {
     if (this.currentTimer) clearTimeout(this.currentTimer);
     this.currentTimer = null;
     this.tasks = [];
