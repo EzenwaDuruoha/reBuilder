@@ -16,7 +16,7 @@ export class Frame {
   }
 
   private worker = async (task: Task, done: QueueTaskCallback) => {
-    const { action, actionOptions: { name } } = task;
+    const { action, actionOptions: { name, breakOnError } } = task;
     const context = this.getContext();
     context.setCurrentStage(name);
 
@@ -32,7 +32,11 @@ export class Frame {
       result = await action(context);
     } catch (error) {
       err = error;
-      context.break(error);
+      if (breakOnError) {
+        context.break(error);
+      } else {
+        context.set('error', error);
+      }
     } finally {
       context.cleanup();
       done(err, result);
@@ -45,12 +49,10 @@ export class Frame {
 
   private enqueue(action: Action, actionOptions?: ActionOptions, actionCallback?: QueueTaskCallback) {
     this.queue.push({ action, actionOptions }, async (err, result) => {
-      try {
-        if (actionCallback) {
-          await actionCallback(err, result)
-        }
-      } catch (error) { }
-    })
+      if (actionCallback) {
+        await actionCallback(err, result)
+      }
+    });
   }
 
   getContext() {

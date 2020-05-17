@@ -43,6 +43,12 @@ export class Context {
     this.originalNext(error);
   }
 
+  get hasError(): boolean {
+    return Object.keys(this.stages).some((stage) => {
+      return this.stages[stage].error;
+    });
+  }
+
   get body() {
     return this.originalRequest?.body;
   }
@@ -61,6 +67,9 @@ export class Context {
 
   setCurrentStage(stage: string) {
     this.currentStage = stage;
+    if (!this.stages[this.currentStage]) {
+      this.stages[this.currentStage] = {};
+    }
   }
 
   getStageStats(stage: string) {
