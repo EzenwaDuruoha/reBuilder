@@ -10,7 +10,7 @@
   "setupFilesAfterEnv": [
     "jest-extended"
   ],
-  "testRegex": "(/tests/.*|(\\.|/)(test|spec))\\.(js|ts)$",
+  "testRegex": "(/tests/.*(\\.|/)(test|spec))\\.(js|ts)$",
   "moduleFileExtensions": [
     "ts",
     "js",

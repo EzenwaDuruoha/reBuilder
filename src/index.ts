@@ -1,26 +1,24 @@
-import { queue, AsyncQueue, ErrorCallback } from 'async';
 import { Request, Response, NextFunction } from 'express';
+import { Queue, QueueTaskCallback } from './Queue';
 
 export interface ContextProps<T extends Object> {
   res: object;
 };
 
-export interface APIBuilderOptions<T extends Object> {
+export interface ApiBuilderOptions<T extends Object> {
 };
 
 export interface ActionOptions<T extends Object> {
   breakOnError?: boolean;
+  [key: string]: any;
 };
 
 export interface Task {
   action: Action,
-  actionOptions: ActionOptions<object>,
-  actionCallback?: ActionCallback
+  actionOptions: ActionOptions<object>
 };
 
 export type Action = (context: Context) => void;
-
-export type ActionCallback = () => void;
 
 export class Context {
   isComplete = false;
@@ -41,41 +39,42 @@ export class Context {
 
 export class Frame {
   [key: string]: any;
-  private queue: AsyncQueue<any>;
+  private queue: Queue;
   private context: Context;
   dependencies: any = {};
 
   constructor(request: Request, response: Response, next: NextFunction, dependencies: {}) {
-    this.queue = queue(this.worker, 1);
+    this.queue = new Queue(this.worker);
     this.context = new Context();
     this.dependencies = dependencies;
   }
 
-  private worker = async (task: Task, done: ErrorCallback) => {
-    const { action, actionOptions = {}, actionCallback } = task;
+  private worker = async (task: Task, done: QueueTaskCallback) => {
+    const { action, actionOptions = {} } = task;
     const context = this.getContext();
 
     if (context.isComplete) return done();
+    let result;
+    let err;
 
     try {
-      await action(context);
+      result = await action(context);
     } catch (error) {
-      if (actionOptions.breakOnError) {
-        context.break(error);
-      } else {
-        context.setValue(error);
-      }
+      err = error;
     } finally {
       context.cleanup();
-      if (actionCallback) {
-        process.nextTick(actionCallback)
-      }
-      done();
+      done(err, result);
     }
   }
 
-  private addToQueue(action: Action, actionOptions?: ActionOptions<Object>, actionCallback?: ActionCallback) {
-    this.queue.push({ action, actionOptions, actionCallback })
+  private enqueue(action: Action, actionOptions?: ActionOptions<Object>, actionCallback?: QueueTaskCallback) {
+    this.queue.push({ action, actionOptions }, async (err, result) => {
+      try {
+        if (actionCallback) {
+          await actionCallback(err, result)
+        }
+      } catch (error) {}
+    })
   }
 
   getContext() {
@@ -83,35 +82,42 @@ export class Frame {
   }
 
   buildAction(action: Action, actionOptions?: ActionOptions<Object>) {
-    return function (this: Frame, cb?: ActionCallback) {
-      this.addToQueue(action, actionOptions, cb);
+    return function (this: Frame, cb?: QueueTaskCallback) {
+      this.enqueue(action, actionOptions, cb);
       return this;
     };
   }
 }
 
+function cloneFrame() {
+  return class ScoppedFrame extends Frame {}
+}
 
-export class APIBuilder {
-  options: APIBuilderOptions<Object>;
+
+export class ApiBuilder {
+  options: ApiBuilderOptions<Object>;
   dependencies: any = {};
+  private ScoppedFrame = cloneFrame();
+  private noOfActions = 0;
 
-  constructor(options: APIBuilderOptions<Object>) {
+  constructor(options: ApiBuilderOptions<Object>) {
     this.options = options;
     Object.freeze(this.options);
   }
 
   init(request: Request, response: Response, next: NextFunction): Frame {
-    const frame = new Frame(request, response, next, this.dependencies);
+    const frame = new this.ScoppedFrame(request, response, next, this.dependencies);
     return frame;
   }
 
   extend(actionName: string, action: Action, actionOptions?: ActionOptions<Object>) {
-    Object.defineProperty(Frame.prototype, actionName, {
-      value: Frame.prototype.buildAction(action, actionOptions),
+    Object.defineProperty(this.ScoppedFrame.prototype, actionName, {
+      value: this.ScoppedFrame.prototype.buildAction(action, actionOptions),
       writable: false,
       enumerable: false,
       configurable: false,
     });
+    this.noOfActions++;
     return this;
   }
 

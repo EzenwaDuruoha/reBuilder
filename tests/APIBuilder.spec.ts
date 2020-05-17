@@ -1,4 +1,4 @@
-import { APIBuilder } from '../src/index';
+import { ApiBuilder } from '../src/index';
 import { Request, Response, NextFunction } from 'express';
 
 const req = {} as Request;
@@ -6,38 +6,51 @@ const res = {} as Response;
 
 jest.useFakeTimers();
 
-describe('APIBuilder', () => {
+describe('ApiBuilder', () => {
 
   test('should initialize properly on request', (done) => {
-    const mock1 = jest.fn();
-    const mock2 = jest.fn();
-    const mock3 = jest.fn();
-    const api = new APIBuilder({});
+    const Action = jest.fn((context: any) => { });
 
-    api.extend('taskOne', (context) => {
-      console.log('taskOne');
-      mock1('taskOne');
-    });
+    const api = new ApiBuilder({});
 
-    api.extend('taskTwo', (context) => {
-      console.log('taskTwo');
-      mock2('taskTwo');
-    });
+    api.extend('taskOne', Action);
 
-    api.extend('taskThree', (context) => {
-      console.log('taskThree');
-      mock3('taskThree');
-    });
-
-    api.init(req, res, (e: any) => console.log(e))
-      .taskOne()
-      .taskTwo()
-      .taskThree(done);
+    api.init(req, res, (e: any) => { })
+      .taskOne(done)
 
     jest.runAllTimers();
 
-    expect(mock1).toHaveBeenCalledBefore(mock2);
-    expect(mock2).toHaveBeenCalledBefore(mock3);
+    expect(Action).toBeCalledTimes(1);
+  });
+
+  test('should run actions in proper sequence', (done) => {
+    const Action = jest.fn((context: any) => jest.runOnlyPendingTimers);
+    const ActionTwo = jest.fn((context: any) => jest.runOnlyPendingTimers);
+    const ActionThree = jest.fn((context: any) => { });
+
+    const api = new ApiBuilder({});
+
+    api.extend('taskOne', Action);
+    api.extend('taskTwo', ActionTwo);
+    api.extend('taskThree', ActionThree);
+
+    api.init(req, res, (e: any) => { })
+      .taskOne((err?: null, res?: any) => {
+        if (res) res();
+        expect(Action).toBeCalledTimes(1);
+        expect(Action).toHaveBeenCalledBefore(ActionTwo);
+      })
+      .taskTwo((err?: null, res?: any) => {
+        if (res) res();
+        expect(ActionTwo).toBeCalledTimes(1);
+        expect(ActionTwo).toHaveBeenCalledBefore(ActionThree);
+      })
+      .taskThree(() => {
+        done();
+        expect(ActionTwo).toBeCalledTimes(1);
+      })
+
+    jest.runOnlyPendingTimers();
   });
 
 });
